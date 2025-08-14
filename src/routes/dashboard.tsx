@@ -155,10 +155,10 @@ export default function Dashboard() {
                     <TableCell className="hidden sm:table-cell">{new Date(it.created_at).toLocaleString()}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" onClick={() => onEditClick(it)} className="mr-1">
-                        <Pencil className="h-4 w-4 mr-1" /> Edit
+                        <Pencil className="h-4 w-4 mr-1" /> 
                       </Button>
                       <Button variant="ghost" onClick={() => onDelete(it.id)}>
-                        <Trash2 className="h-4 w-4 mr-1" /> Delete
+                        <Trash2 className="h-4 w-4 mr-1" /> 
                       </Button>
                     </TableCell>
                   </TableRow>
