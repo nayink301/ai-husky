@@ -75,7 +75,6 @@ export default function Login() {
             </Button>
             </div>
             <div className="mt-2 text-xs text-amber-800">
-            Or use <code>{DEMO_EMAIL}</code> / <code>{DEMO_PASSWORD}</code>
           </div>
           
         </div>
