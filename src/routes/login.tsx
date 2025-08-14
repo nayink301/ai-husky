@@ -35,16 +35,26 @@ export default function Login() {
       password: pwd,
     });
 
-    if (error) {
-      // try sign-up on first attempt
-      const { error: upErr } = await supabase.auth.signUp({ email, password: pwd });
-      if (upErr) alert(error.message);
-    } else if (data.session) {
-      nav(from, { replace: true });
-    }
-
-    setLoading(false);
-  };
+    if (!error && data.session) {
+        nav("/dashboard", { replace: true });
+      } else {
+        // No account? Create one. With "Confirm email" OFF, this returns a session immediately.
+        const { data: su, error: upErr } = await supabase.auth.signUp({ email, password: pwd });
+        if (upErr) {
+          alert(upErr.message);
+        } else if (su.session) {
+          nav("/dashboard", { replace: true });
+        } else {
+          // This only happens if confirmations are ON
+          alert("Sign-up successful. Please check your email to confirm.");
+        }
+      }
+    }  
+      
+      
+      
+      
+    
 
   // ✅ this is the handler your button needs
   const tryDemo = () => {

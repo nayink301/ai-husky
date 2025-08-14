@@ -12,6 +12,7 @@ import { classifyIntent, classifySentiment } from "@/lib/aiHusky";
 import { Pencil, Trash2 } from "lucide-react";
 import { disableDemoMode, isDemoMode } from "@/lib/demoFlag";
 import { useNavigate } from "react-router-dom";
+import Welcome from "@/components/welcome";
 
 type SortKey = "name" | "created_at";
 type SortDir = "asc" | "desc";
@@ -122,7 +123,7 @@ export default function Dashboard() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <div className="rounded-2xl border bg-white shadow-sm p-4 sm:p-6">
-        <h1 className="text-xl font-semibold mb-4">Dashboard</h1>
+         <Welcome className="mb-4" />
 
         {sorted.length === 0 ? (
           <Alert kind="info">No items yet. Create your first item from the “New Item” page.</Alert>
