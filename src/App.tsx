@@ -14,6 +14,14 @@ import Dashboard from "./routes/dashboard";
 import NewItem from "./routes/new-item";
 import Unauthorized from "./routes/unauthorized";
 import NotFound from "./routes/not-found";
+function LandingRedirect() {
+    // Option A: always send to /login
+    return <Navigate to="/login" replace />;
+  
+    // --- OR ---
+    // Option B: be smart: demo => /dashboard, otherwise /login
+    // return isDemoMode() ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
+  }
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -47,6 +55,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      {/* NEW: root redirect */}
+      <Route path="/" element={<LandingRedirect />} /> 
+      
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
