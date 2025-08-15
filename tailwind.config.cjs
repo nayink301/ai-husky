@@ -53,6 +53,16 @@ module.exports = {
     		}
     	}
     },
-    plugins: [require("tailwindcss-animate")]
+    plugins: [require("tailwindcss-animate")],
+  // (optional but safe) ensure these are never purged:
+  safelist: [
+    "line-clamp-1",
+    "line-clamp-2",
+    "line-clamp-3",
+    "line-clamp-4",
+    "line-clamp-5",
+    "line-clamp-6",
+    "line-clamp-none",
+  ],
   };
   
