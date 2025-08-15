@@ -1,188 +1,266 @@
+// src/routes/dashboard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { listItems, deleteItem, updateItem} from "@/services/items";
-import type { Item } from "@/types/item";
-import EditItemModal from "@/components/edit-item-modal";
-import Spinner from "@/components/spinner";
-import Alert from "@/components/alert";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { isHuskyOn } from "@/lib/huskyToggle";
-import { classifyIntent, classifySentiment } from "@/lib/aiHusky";
-import { Pencil, Trash2 } from "lucide-react";
-import { disableDemoMode, isDemoMode } from "@/lib/demoFlag";
-import { useNavigate } from "react-router-dom";
+import { listItems, deleteItem, updateItem } from "@/services/items";
+import type { Item } from "@/types/item";
 import Welcome from "@/components/welcome";
+import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Plus, Pencil, Trash2, PawPrint } from "lucide-react";
+import { classifySentiment } from "@/lib/aiHusky";
 
-type SortKey = "name" | "created_at";
-type SortDir = "asc" | "desc";
+type Sentiment = "positive" | "negative" | "neutral";
 
-
-function HuskyBadge({ text }: { text: string | null }) {
-  if (!isHuskyOn() || !text?.trim()) return null;
-  const { intent } = classifyIntent(text);
-  if (intent === "review") {
-    const { sentiment } = classifySentiment(text);
-    const cls = sentiment === "positive" ? "bg-green-100 text-green-900"
-      : sentiment === "negative" ? "bg-red-100 text-red-900"
-      : "bg-gray-100 text-gray-800";
-    const label = sentiment === "positive" ? "Review: Positive"
-      : sentiment === "negative" ? "Review: Negative" : "Review";
-    return <span className={`text-xs px-2 py-0.5 rounded ${cls}`}>{label}</span>;
+function colorFor(sent: Sentiment) {
+  switch (sent) {
+    case "positive": return "text-emerald-600";
+    case "negative": return "text-red-600";
+    default: return "text-amber-600";
   }
-  return <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-900">Other</span>;
 }
-export function DemoBanner() {
-    const nav = useNavigate();
-  
-    const exitDemo = () => {
-      disableDemoMode();
-      nav("/login", { replace: true });
-      window.location.reload(); // ensures all in-memory state resets
-    };
-  
-    if (!isDemoMode()) return null;
-  
-    return (
-      <div className="bg-amber-100 text-amber-900 px-4 py-2 flex justify-between items-center">
-        <span>You are in demo mode.</span>
-        <Button variant="outline" size="sm" onClick={exitDemo}>
-          ❌ Exit demo
-        </Button>
-      </div>
-    );
-  }
 
 export default function Dashboard() {
-  const [all, setAll] = useState<Item[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
 
-  const [sortKey, setSortKey] = useState<SortKey>("created_at");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
-  const pageSize = 5;
+  // Selected filter; null = show all
+  const [selected, setSelected] = useState<Sentiment | null>(null);
 
-  const [openEdit, setOpenEdit] = useState(false);
-  const [editing, setEditing] = useState<Item | null>(null);
+  const load = async () => {
+    try {
+      const data = await listItems();
+      setItems(data);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load items");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  useEffect(() => {
-    (async () => {
-      try { setLoading(true); setAll(await listItems()); }
-      catch (e: any) { setErr(e?.message ?? "Failed to load."); }
-      finally { setLoading(false); }
-    })();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const sorted = useMemo(() => {
-    const s = [...all].sort((a, b) => {
-      if (sortKey === "name") return a.name.localeCompare(b.name);
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  // Add a lightweight sentiment to each row
+  const itemsWithSentiment = useMemo(() => {
+    return items.map((it) => {
+      const text = (it.description ?? "").trim();
+      const s = text ? classifySentiment(text).sentiment : "neutral";
+      return { ...it, _sentiment: (s ?? "neutral") as Sentiment };
     });
-    return sortDir === "asc" ? s : s.reverse();
-  }, [all, sortKey, sortDir]);
+  }, [items]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
+  // Apply filter
+  const filtered = useMemo(
+    () => selected ? itemsWithSentiment.filter((x) => x._sentiment === selected) : itemsWithSentiment,
+    [itemsWithSentiment, selected]
+  );
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(key); setSortDir("asc"); }
-    setPage(1);
+  // Toggle filter when clicking a header paw
+  const toggleFilter = (s: Sentiment) => setSelected((cur) => (cur === s ? null : s));
+
+  // Single combined prompt: "Name | Description"
+  const onEdit = async (it: Item) => {
+    const seedName = it.name ?? "";
+    const seedDesc = (it.description ?? "").replace(/\n/g, " "); // keep prompt one-line
+    const combined = window.prompt("Edit as: Name | Description", `${seedName} | ${seedDesc}`);
+    if (combined === null) return; // cancel
+
+    // Parse by the first " | "
+    const [rawName, ...rest] = combined.split("|");
+    const newName = (rawName ?? "").trim();
+    const newDesc = rest.join("|").trim(); // in case user had extra pipes
+
+    if (!newName) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+
+    const prev = items;
+    // optimistic update
+    setItems((xs) =>
+      xs.map((x) =>
+        x.id === it.id ? { ...x, name: newName, description: newDesc || null } : x
+      )
+    );
+
+    try {
+      await updateItem(it.id, { name: newName, description: newDesc || null });
+      toast.success("Item updated");
+    } catch (e) {
+      setItems(prev); // revert on failure
+      toast.error(e instanceof Error ? e.message : "Update failed");
+    }
   };
 
   const onDelete = async (id: string) => {
-    const prev = all;
-    setAll(prev.filter(x => x.id !== id));
-    try { await deleteItem(id); toast.success("Deleted", { duration: 3000 }); }
-    catch { setAll(prev); toast.error("Delete failed", { duration: 5000 }); }
+    const ok = window.confirm("Delete this item?");
+    if (!ok) return;
+    const prev = items;
+    setItems((xs) => xs.filter((x) => x.id !== id)); // optimistic
+    try {
+      await deleteItem(id);
+      toast.success("Item deleted");
+    } catch (e) {
+      setItems(prev);
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
   };
-
-  const onEditClick = (row: Item) => { setEditing(row); setOpenEdit(true); };
-  const onSaveEdit = async (values: { name: string; description: string | null }) => {
-    if (!editing) return;
-    const id = editing.id;
-    const prev = all;
-    setAll(prev.map(x => x.id === id ? { ...x, ...values } : x));
-    try { await updateItem(id, values); toast.success("Updated", { duration: 3000 }); }
-    catch { setAll(prev); toast.error("Update failed", { duration: 5000 }); }
-    finally { setEditing(null); }
-  };
-
-  if (loading) return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="rounded-2xl border bg-white shadow-sm p-6"><Spinner label="Loading dashboard…" /></div>
-    </div>
-  );
-  if (err) return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="rounded-2xl border bg-white shadow-sm p-6"><Alert kind="error">{err}</Alert></div>
-    </div>
-  );
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="rounded-2xl border bg-white shadow-sm p-4 sm:p-6">
-         <Welcome className="mb-4" />
-
-        {sorted.length === 0 ? (
-          <Alert kind="info">No items yet. Create your first item from the “New Item” page.</Alert>
-        ) : (
-          <div className="border rounded">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("name")}>
-                    Name {sortKey==="name" ? (sortDir==="asc" ? "↑" : "↓") : ""}
-                  </TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("created_at")}>
-                    Created {sortKey==="created_at" ? (sortDir==="asc" ? "↑" : "↓") : ""}
-                  </TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pageItems.map(it => (
-                  <TableRow key={it.id}>
-                    <TableCell className="font-medium">{it.name}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div>{it.description}</div>
-                        <HuskyBadge text={it.description} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell">{new Date(it.created_at).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" onClick={() => onEditClick(it)} className="mr-1">
-                        <Pencil className="h-4 w-4 mr-1" /> 
-                      </Button>
-                      <Button variant="ghost" onClick={() => onDelete(it.id)}>
-                        <Trash2 className="h-4 w-4 mr-1" /> 
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {sorted.length > 0 && (
-          <div className="mt-3 flex items-center gap-2">
-            <Button variant="outline" disabled={page===1} onClick={() => setPage(p => Math.max(1, p-1))}>Prev</Button>
-            <span className="text-sm">Page {page} / {totalPages}</span>
-            <Button variant="outline" disabled={page===totalPages} onClick={() => setPage(p => Math.min(totalPages, p+1))}>Next</Button>
-          </div>
-        )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-lg sm:text-xl font-semibold">Dashboard</h1>
+          <Welcome className="mt-1" />
+        </div>
+        <div className="flex gap-2">
+          <Link to="/new">
+            <Button className="h-10 sm:h-9">
+              <Plus className="h-4 w-4 mr-1.5" />
+              New Item
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      <EditItemModal
-        open={openEdit}
-        onClose={() => { setOpenEdit(false); setEditing(null); }}
-        item={editing}
-        onSave={onSaveEdit}
-      />
+      <div className="mt-4 rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[640px] sm:min-w-0">
+            <TableHeader>
+              <TableRow className="text-xs sm:text-sm">
+                <TableHead className="w-[38%] sm:w-[30%]">Name</TableHead>
+
+                {/* Description header + tiny paw filters (no label) */}
+                <TableHead className="hidden sm:table-cell w-[42%]">
+                  <div className="flex items-center gap-2">
+                    <span>Description</span>
+                    <div className="flex items-center gap-1 ml-1">
+                      {/* Negative */}
+                      <button
+                        type="button"
+                        className={`p-1 rounded ${selected === "negative" ? "bg-red-50" : ""}`}
+                        onClick={() => toggleFilter("negative")}
+                        title="Filter negative"
+                        aria-pressed={selected === "negative"}
+                      >
+                        <PawPrint className={`h-4 w-4 ${colorFor("negative")}`} />
+                      </button>
+                      {/* Neutral */}
+                      <button
+                        type="button"
+                        className={`p-1 rounded ${selected === "neutral" ? "bg-amber-50" : ""}`}
+                        onClick={() => toggleFilter("neutral")}
+                        title="Filter neutral"
+                        aria-pressed={selected === "neutral"}
+                      >
+                        <PawPrint className={`h-4 w-4 ${colorFor("neutral")}`} />
+                      </button>
+                      {/* Positive */}
+                      <button
+                        type="button"
+                        className={`p-1 rounded ${selected === "positive" ? "bg-emerald-50" : ""}`}
+                        onClick={() => toggleFilter("positive")}
+                        title="Filter positive"
+                        aria-pressed={selected === "positive"}
+                      >
+                        <PawPrint className={`h-4 w-4 ${colorFor("positive")}`} />
+                      </button>
+                    </div>
+                  </div>
+                </TableHead>
+
+                <TableHead className="w-[22%] sm:w-[20%]">Created</TableHead>
+                <TableHead className="w-[90px] text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-6 text-center text-sm text-gray-500">
+                    Loading…
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center">
+                    <div className="text-sm text-gray-600">No items match.</div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((it: any) => (
+                  <TableRow key={it.id} className="align-top">
+                    <TableCell className="py-3">
+                      <div className="font-medium text-sm sm:text-base">{it.name}</div>
+                      {/* Mobile: inline desc + row paw */}
+                      <div className="sm:hidden text-xs text-gray-600 mt-1 flex items-start gap-1.5">
+                        <PawPrint className={`mt-0.5 h-3.5 w-3.5 ${colorFor(it._sentiment)}`} />
+                        <span className="line-clamp-2">{it.description ?? "—"}</span>
+                      </div>
+                    </TableCell>
+
+                    {/* Desktop: description column with a single row paw */}
+                    <TableCell className="hidden sm:table-cell py-3 text-sm text-gray-700">
+                      <div className="flex items-start gap-2">
+                        <PawPrint className={`mt-0.5 h-4 w-4 ${colorFor(it._sentiment)}`} />
+                        <span className="line-clamp-2">{it.description ?? "—"}</span>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="py-3">
+                    <div
+                        className="flex flex-col items-center justify-center w-12 h-12 rounded-lg border shadow-sm bg-gray-50"
+                          title={new Date(it.created_at).toLocaleString()} // hover full date/time
+                       >
+    <span className="text-[0.6rem] uppercase text-gray-500 leading-none">
+      {format(new Date(it.created_at), "MMM")}
+    </span>
+    <span className="text-lg font-semibold leading-none">
+      {format(new Date(it.created_at), "d")}
+    </span>
+    <span className="text-[0.6rem] text-gray-400 leading-none">
+      {format(new Date(it.created_at), "yyyy")}
+    </span>
+  </div>
+</TableCell>
+
+                    <TableCell className="py-3">
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2"
+                          onClick={() => onEdit(it)}
+                          aria-label={`Edit ${it.name}`}
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="h-8 px-2"
+                          onClick={() => onDelete(it.id)}
+                          aria-label={`Delete ${it.name}`}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </div>
   );
 }
+
