@@ -1,6 +1,6 @@
-# 🐾 AI Husky – Sentiment-Aware Inventory Dashboard
+# 🐾 AI Husky – Sentiment-Aware feedback Dashboard
 
-**AI Husky** is a modern full-stack inventory management app with built-in AI assistance.  
+**AI Husky** is a modern full-stack feedback assistance app with built-in AI assistance.  
 It’s powered by **React + Vite + TypeScript**, **Supabase** for backend & auth, **Tailwind CSS** for styling, and **Shadcn/UI + Sonner** for beautiful UI components.
 
 ---
